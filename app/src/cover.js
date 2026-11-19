@@ -1,390 +1,498 @@
-// Renders the cover onto a canvas: painted sunset sky with sun glow and palm
-// silhouettes, the multi-panel photo grid with per-panel crop, gradient-map
-// colour grades, a halftone title in a title band, and a vignette + frame.
-// Pure canvas 2D, no network, no library.
-import { GRADES, layoutPanels } from './state.js';
+// Heatwave Cover Studio — canvas rendering pipeline.
+// Paints a cover in one deterministic pass: sky, panels, gradient-map
+// grade, palms and frames, caption, vignette. Nothing here touches the
+// DOM except for creating offscreen canvases; every random-looking
+// detail comes from a seeded generator so the same state always paints
+// the same bytes.
 
-/** Draws one palm silhouette: a leaning trunk and seven drooping fronds. */
-export function drawPalm(ctx, x, y, size, lean, color) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineCap = 'round';
-  // Trunk, leaning by `lean` radians, thicker at the base.
-  ctx.lineWidth = size * 0.055;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(lean * size * 0.4, -size * 0.55, lean * size, -size);
-  ctx.stroke();
-  const tx = lean * size;
-  const ty = -size;
-  // Fronds fan out from the crown and droop: each arc rises from the crown
-  // then falls, so the silhouette reads as a palm, not a starburst.
-  for (let i = 0; i < 7; i++) {
-    const t = i / 6;
-    const theta = -Math.PI + t * Math.PI; // -180..0 degrees, upper half
-    const len = size * (0.34 + (i % 2) * 0.08 + (i === 3 ? 0.08 : 0));
-    const ex = tx + Math.cos(theta) * len;
-    const ey = ty + Math.sin(theta) * len * 0.55 + len * 0.42;
-    const cx = tx + Math.cos(theta) * len * 0.6;
-    const cy = ty + Math.sin(theta) * len * 0.6 - len * 0.16;
-    ctx.lineWidth = size * 0.032;
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.quadraticCurveTo(cx, cy, ex, ey);
-    ctx.stroke();
-  }
-  // Coconuts.
-  ctx.beginPath();
-  ctx.arc(tx - size * 0.02, ty + size * 0.03, size * 0.03, 0, Math.PI * 2);
-  ctx.arc(tx + size * 0.04, ty + size * 0.04, size * 0.025, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
+import { gradeById, layoutPanels } from './state.js';
 
-/** A jagged downtown skyline silhouette along the given baseline. */
-export function drawSkyline(ctx, w, baseY, height, color) {
-  ctx.fillStyle = color;
-  let x = 0;
-  let seed = 7;
-  const next = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  while (x < w) {
-    const bw = w * (0.04 + next() * 0.05);
-    const bh = height * (0.35 + next() * 0.65);
-    ctx.fillRect(x, baseY - bh, bw, bh);
-    if (next() > 0.6) ctx.fillRect(x + bw * 0.3, baseY - bh - height * 0.18, bw * 0.12, height * 0.18);
-    x += bw + w * 0.004;
-  }
-}
-
-/** Paints the sky: vertical gradient, glowing sun disc, skyline, palms at the edges. */
-export function drawSky(ctx, grade, w, h) {
-  const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, grade.sky[0]);
-  sky.addColorStop(0.55, grade.sky[1]);
-  sky.addColorStop(1, grade.sky[2]);
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, h);
-  // Sun with a soft halo, upper third.
-  const sx = w * 0.72;
-  const sy = h * 0.26;
-  const sr = Math.min(w, h) * 0.11;
-  const halo = ctx.createRadialGradient(sx, sy, sr * 0.2, sx, sy, sr * 3.2);
-  halo.addColorStop(0, grade.sun);
-  halo.addColorStop(0.35, grade.sun + '55');
-  halo.addColorStop(1, grade.sun + '00');
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, w, h);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = grade.sun;
-  ctx.beginPath();
-  ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-  ctx.fill();
-  drawSkyline(ctx, w, h * 0.98, h * 0.1, 'rgba(10, 2, 20, 0.55)');
+// Small deterministic generator: the same seed always yields the same
+// skyline, clouds and palms, so exports are reproducible.
+export function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function hexToRgb(hex) {
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/**
- * Builds the 256-entry lookup for a gradient-map grade: each input luminance
- * (0..255) maps to the colour on the gradient through `stops`.
- */
+// A 256-entry lookup table for a gradient-map grade: each stop is
+// [position 0..1, '#rrggbb']; luminance 0..255 indexes into it.
 export function buildGradientMapLookup(stops) {
-  const rgb = stops.map(hexToRgb);
-  const lut = new Uint8Array(256 * 3);
+  const table = new Uint8Array(256 * 3);
+  const points = stops.map(([at, hex]) => ({ at, rgb: hexToRgb(hex) }));
   for (let i = 0; i < 256; i++) {
-    const t = (i / 255) * (rgb.length - 1);
-    const k = Math.min(rgb.length - 2, Math.floor(t));
-    const f = t - k;
-    for (let c = 0; c < 3; c++) lut[i * 3 + c] = rgb[k][c] + (rgb[k + 1][c] - rgb[k][c]) * f;
+    const t = i / 255;
+    let a = points[0];
+    let b = points[points.length - 1];
+    for (let k = 0; k < points.length - 1; k++) {
+      if (t >= points[k].at && t <= points[k + 1].at) { a = points[k]; b = points[k + 1]; break; }
+    }
+    const span = Math.max(1e-6, b.at - a.at);
+    const f = Math.min(1, Math.max(0, (t - a.at) / span));
+    table[i * 3] = Math.round(a.rgb[0] + (b.rgb[0] - a.rgb[0]) * f);
+    table[i * 3 + 1] = Math.round(a.rgb[1] + (b.rgb[1] - a.rgb[1]) * f);
+    table[i * 3 + 2] = Math.round(a.rgb[2] + (b.rgb[2] - a.rgb[2]) * f);
   }
-  return lut;
+  return table;
 }
 
-/**
- * Gradient-map grade: remaps every pixel's luminance through the grade's
- * gradient stops, blended with the original by `strength`. Applied to the
- * whole cover after the panels are drawn (and before the caption), so the
- * sky, the photos and the frames all share one poster grade.
- */
-export function applyGradientMapGrade(ctx, w, h, stops, strength) {
-  if (!stops || strength <= 0) return;
-  const lut = buildGradientMapLookup(stops);
-  const image = ctx.getImageData(0, 0, w, h);
-  const d = image.data;
-  const s = Math.max(0, Math.min(1, strength));
-  for (let i = 0; i < d.length; i += 4) {
-    const lum = Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]);
-    const j = lum * 3;
-    d[i] = d[i] + (lut[j] - d[i]) * s;
-    d[i + 1] = d[i + 1] + (lut[j + 1] - d[i + 1]) * s;
-    d[i + 2] = d[i + 2] + (lut[j + 2] - d[i + 2]) * s;
+// Remap every pixel of the whole canvas through the grade's gradient:
+// dark stays dark, bright stays bright, the hue comes from the stops.
+export function applyGradientMapGrade(ctx, W, H, stops) {
+  const lookup = buildGradientMapLookup(stops);
+  const image = ctx.getImageData(0, 0, W, H);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const lum = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+    const base = lum * 3;
+    data[i] = lookup[base];
+    data[i + 1] = lookup[base + 1];
+    data[i + 2] = lookup[base + 2];
   }
   ctx.putImageData(image, 0, 0);
 }
 
-/** Draws one photo panel, cover-fit with the panel's zoom and pan, grade-filtered. */
-export function drawPanel(ctx, panel, photo, grade, strength, x, y, pw, ph) {
+// The Vice City sky: a three-stop vertical gradient, a glowing sun and
+// a few soft drifting clouds. Drawn over the full cover first so it
+// shows through the gaps between panels.
+export function drawSky(ctx, W, H, grade) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, grade.sky[0]);
+  sky.addColorStop(0.55, grade.sky[1]);
+  sky.addColorStop(1, grade.sky[2]);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  const sunX = W * 0.72;
+  const sunY = H * 0.3;
+  const sunR = H * 0.17;
+  const glow = ctx.createRadialGradient(sunX, sunY, sunR * 0.1, sunX, sunY, sunR * 2.4);
+  glow.addColorStop(0, grade.sun);
+  glow.addColorStop(0.35, grade.sun + '55');
+  glow.addColorStop(1, grade.sun + '00');
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = glow;
+  ctx.fillRect(sunX - sunR * 2.4, sunY - sunR * 2.4, sunR * 4.8, sunR * 4.8);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = grade.sun;
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+  ctx.fill();
+
+  const rand = mulberry32(20261119);
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 6; i++) {
+    const cx = rand() * W;
+    const cy = rand() * H * 0.45;
+    const cw = W * (0.09 + rand() * 0.12);
+    const ch = H * (0.015 + rand() * 0.02);
+    ctx.globalAlpha = 0.08 + rand() * 0.09;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, cw, ch, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A dark building skyline with lit windows, fitted into (x, y, w, h).
+// The seed picks the building widths and which windows are lit.
+export function drawSkyline(ctx, x, y, w, h, seed) {
+  const rand = mulberry32(seed);
+  ctx.fillStyle = '#150829';
+  let bx = x;
+  while (bx < x + w) {
+    const bw = w * (0.05 + rand() * 0.09);
+    const bh = h * (0.35 + rand() * 0.6);
+    ctx.fillRect(bx, y + h - bh, bw, bh);
+    if (rand() < 0.4) {
+      ctx.fillRect(bx + bw * 0.3, y + h - bh - h * 0.08, bw * 0.4, h * 0.08);
+    }
+    const cols = Math.max(1, Math.floor(bw / (w * 0.018)));
+    const rows = Math.max(1, Math.floor(bh / (h * 0.09)));
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        if (rand() < 0.34) {
+          ctx.fillStyle = rand() < 0.75 ? '#ffd76a' : '#19c3e6';
+          ctx.globalAlpha = 0.55 + rand() * 0.4;
+          ctx.fillRect(
+            bx + (c + 0.25) * (bw / cols),
+            y + h - bh + (r + 0.25) * (bh / rows),
+            bw / cols * 0.5, bh / rows * 0.45,
+          );
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#150829';
+        }
+      }
+    }
+    bx += bw + w * 0.008;
+  }
+}
+
+// One palm silhouette: a leaning trunk and seven fronds that rise from
+// the crown and then droop. (x, y) is the base of the trunk, s its
+// height in pixels, lean bends it left (negative) or right.
+export function drawPalm(ctx, x, y, s, lean, color) {
+  const ink = color || '#12061f';
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineCap = 'round';
+  const topX = x + lean * s;
+  const topY = y - s;
+  ctx.lineWidth = Math.max(2, s * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.quadraticCurveTo(x + lean * s * 0.3, y - s * 0.55, topX, topY);
+  ctx.stroke();
+  const fronds = 7;
+  for (let i = 0; i < fronds; i++) {
+    const ang = (-Math.PI * 0.92) + (i / (fronds - 1)) * Math.PI * 0.84;
+    const len = s * (0.5 + (i % 3) * 0.07);
+    const tipX = topX + Math.cos(ang) * len;
+    const tipY = topY + Math.sin(ang) * len * 0.55 + len * 0.34;
+    const midX = topX + Math.cos(ang) * len * 0.55;
+    const midY = topY + Math.sin(ang) * len * 0.5 - len * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+    ctx.quadraticCurveTo(midX + (tipX - midX) * 0.12, midY + s * 0.035, topX, topY);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Cover-fit one photo into a panel rect, with zoom and pan. The pan is
+// clamped so the photo always covers the panel: no background can ever
+// show through, however far the user drags. Returns the clamped pan so
+// callers (and tests) can read back what was actually used.
+export function drawPanel(ctx, panelRect, image, crop, grade) {
+  const { x, y, w, h } = panelRect;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x, y, pw, ph);
+  ctx.rect(x, y, w, h);
   ctx.clip();
-  if (photo && photo.img) {
-    const img = photo.img;
-    const base = Math.max(pw / img.naturalWidth, ph / img.naturalHeight);
-    const scale = base * (panel.zoom || 1);
-    const dw = img.naturalWidth * scale;
-    const dh = img.naturalHeight * scale;
-    let dx = x + (pw - dw) / 2 + (panel.ox || 0) * pw;
-    let dy = y + (ph - dh) / 2 + (panel.oy || 0) * ph;
-    // Clamp the pan so the photo always covers the whole panel (zoom >= 1
-    // guarantees dw >= pw and dh >= ph, so the clamp range is valid).
-    dx = Math.min(x, Math.max(x + pw - dw, dx));
-    dy = Math.min(y, Math.max(y + ph - dh, dy));
-    ctx.filter = grade.filter;
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.filter = 'none';
-  } else {
-    const g = ctx.createLinearGradient(x, y, x + pw, y + ph);
-    g.addColorStop(0, '#3a1c5c');
-    g.addColorStop(1, '#12081c');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, pw, ph);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.font = `bold ${Math.max(14, pw * 0.07)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('+ ADD PHOTO', x + pw / 2, y + ph / 2);
+  if (!image) {
+    const fill = ctx.createLinearGradient(x, y, x + w, y + h);
+    fill.addColorStop(0, grade.sky[1]);
+    fill.addColorStop(1, grade.sky[2]);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    return { panX: 0, panY: 0 };
   }
-  // Warm wash inside the panel so the grade reads on every photo.
-  ctx.globalAlpha = grade.overlay[1] * strength;
-  ctx.fillStyle = grade.overlay[0];
-  ctx.fillRect(x, y, pw, ph);
-  ctx.globalAlpha = 1;
-  ctx.restore();
-  // Crisp white frame and a soft drop shadow edge.
-  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-  ctx.lineWidth = Math.max(2, pw * 0.008);
-  ctx.strokeRect(x, y, pw, ph);
-}
-
-/**
- * Halftone title: the Bebas Neue title filled white with a thick accent
- * outline, then a dot grid in the accent colour clipped inside the glyphs
- * (dots grow towards the bottom of each letter, like a printed poster).
- * Drawn on an offscreen canvas so the dots never spill outside the letters.
- */
-export function renderHalftoneTitle(ctx, title, cx, cy, size, outlineColor, accent) {
-  const off = document.createElement('canvas');
-  const pad = Math.ceil(size * 0.35);
-  off.width = Math.ceil(ctx.measureText(title).width) + pad * 2;
-  off.height = Math.ceil(size * 1.5);
-  const o = off.getContext('2d');
-  o.font = `${size}px "Bebas Neue", sans-serif`;
-  try { o.letterSpacing = `${size * 0.05}px`; } catch (e) { /* older canvas */ }
-  o.textAlign = 'center';
-  o.textBaseline = 'middle';
-  o.lineJoin = 'round';
-  o.lineWidth = Math.max(2, size * 0.1);
-  o.strokeStyle = outlineColor;
-  o.strokeText(title, off.width / 2, off.height / 2);
-  o.fillStyle = '#ffffff';
-  o.fillText(title, off.width / 2, off.height / 2);
-  // Dots only where the letters are (source-atop), denser and bigger low.
-  o.globalCompositeOperation = 'source-atop';
-  const step = Math.max(5, size * 0.085);
-  for (let y = off.height * 0.42; y < off.height; y += step) {
-    const depth = (y - off.height * 0.42) / (off.height * 0.58);
-    for (let x = step / 2; x < off.width; x += step) {
-      const r = step * (0.12 + depth * 0.38);
-      o.fillStyle = depth > 0.55 ? accent : outlineColor;
-      o.beginPath();
-      o.arc(x, y, r, 0, Math.PI * 2);
-      o.fill();
-    }
-  }
-  ctx.drawImage(off, cx - off.width / 2, cy - off.height / 2);
-}
-
-/** The dark band the Key Art title sits in, with an accent stripe on top. */
-export function drawTitleBand(ctx, w, h, accent) {
-  const bandH = h * 0.17;
-  const y = h - bandH;
-  const band = ctx.createLinearGradient(0, y, 0, h);
-  band.addColorStop(0, 'rgba(10, 2, 20, 0.72)');
-  band.addColorStop(1, 'rgba(10, 2, 20, 0.92)');
-  ctx.fillStyle = band;
-  ctx.fillRect(0, y, w, bandH);
-  ctx.fillStyle = accent;
-  ctx.fillRect(0, y, w, Math.max(3, h * 0.006));
-  return { x: 0, y, w, h: bandH };
-}
-
-/** The bold caption: Bebas Neue capitals, in one of four styles, with subtitle beneath. */
-export function drawCaption(ctx, state, grade, w, h, heroRect) {
-  const title = (state.title || '').trim().toUpperCase();
-  const sub = (state.subtitle || '').trim().toUpperCase();
-  if (!title && !sub) return;
-  const bandH = h * 0.2;
-  let cy;
-  let band = null;
-  if (state.titlePos === 'top') cy = h * 0.06 + bandH * 0.45;
-  else if (state.titlePos === 'hero' && heroRect) cy = heroRect.y + heroRect.h * 0.82;
-  else if (state.titlePos === 'band') {
-    band = drawTitleBand(ctx, w, h, state.outlineColor || grade.accent);
-    cy = band.y + band.h * 0.46;
-  } else cy = h - bandH * 0.42;
-
-  if (state.titlePos !== 'band') {
-    // Darken behind the lettering so it reads over any photo.
-    const scrim = ctx.createLinearGradient(0, cy - bandH * 0.55, 0, cy + bandH * 0.6);
-    scrim.addColorStop(0, 'rgba(8,2,16,0)');
-    scrim.addColorStop(0.5, 'rgba(8,2,16,0.42)');
-    scrim.addColorStop(1, 'rgba(8,2,16,0)');
-    ctx.fillStyle = scrim;
-    ctx.fillRect(0, cy - bandH * 0.55, w, bandH * 1.15);
-  }
-
-  if (title) {
-    let size = Math.min(w, h) * 0.135 * (state.titleSize || 1);
-    if (band) size = Math.min(size, band.h * 0.62);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const setFont = () => { ctx.font = `${size}px "Bebas Neue", sans-serif`; try { ctx.letterSpacing = `${size * 0.05}px`; } catch (e) { /* older canvas */ } };
-    setFont();
-    while (ctx.measureText(title).width > w * 0.92 && size > 10) { size -= 2; setFont(); }
-    const ty = cy - (sub ? size * 0.32 : 0);
-    const accent = state.outlineColor || grade.accent;
-    if (state.titleStyle === 'halftone') {
-      renderHalftoneTitle(ctx, title, w / 2, ty, size, accent, grade.accent);
-    } else {
-      if (state.titleStyle === 'shadow') {
-        ctx.shadowColor = 'rgba(0,0,0,0.75)';
-        ctx.shadowBlur = size * 0.18;
-        ctx.shadowOffsetY = size * 0.06;
-      }
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = Math.max(2, size * 0.09);
-      ctx.strokeStyle = accent;
-      ctx.strokeText(title, w / 2, ty);
-      ctx.fillStyle = state.titleStyle === 'solid' ? accent : '#ffffff';
-      ctx.fillText(title, w / 2, ty);
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
-    }
-    if (sub) {
-      const ss = Math.max(12, size * 0.22);
-      ctx.font = `bold ${ss}px sans-serif`;
-      try { ctx.letterSpacing = `${ss * 0.32}px`; } catch (e) { /* older canvas */ }
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(0,0,0,0.7)';
-      ctx.shadowBlur = ss * 0.3;
-      ctx.fillText(sub, w / 2, ty + size * 0.62);
-      ctx.shadowBlur = 0;
-    }
-  } else if (sub) {
-    const ss = Math.max(14, Math.min(w, h) * 0.03);
-    ctx.font = `bold ${ss}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(sub, w / 2, cy);
-  }
-}
-
-/**
- * Shared cover pipeline: sky, panels, gradient-map grade, palm framing,
- * caption, vignette and outer frame. `chrome` picks the layout-specific
- * extras: Key Art gets its title band via the caption position, Mosaic gets
- * hairline gutters and an accent frame on its centre tile.
- */
-export function paintCoverBase(canvas, state, chrome) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
-  const grade = GRADES[state.grade] || GRADES.heatwave;
-  const strength = state.gradeStrength == null ? 0.75 : state.gradeStrength;
-  drawSky(ctx, grade, w, h);
-
-  const panels = layoutPanels(state, w, h);
-  const gap = chrome === 'mosaic' ? Math.max(2, Math.min(w, h) * 0.004) : Math.max(4, Math.min(w, h) * 0.008);
-  let heroRect = null;
-  for (const p of panels) {
-    const x = p.rect[0] * w + gap / 2;
-    const y = p.rect[1] * h + gap / 2;
-    const pw = p.rect[2] * w - gap;
-    const ph = p.rect[3] * h - gap;
-    if (p.hero) heroRect = { x, y, w: pw, h: ph };
-    const photo = state.photos[p.photo] || null;
-    drawPanel(ctx, p, photo, grade, strength, x, y, pw, ph);
-  }
-
-  // Gradient-map grades remap the whole painted cover at once.
-  if (grade.map) applyGradientMapGrade(ctx, w, h, grade.map, strength);
-
-  if (chrome === 'mosaic' && heroRect) {
-    // Accent frame on the centre tile so the 3x3 grid has a focal point.
-    ctx.strokeStyle = grade.accent;
-    ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.008);
-    ctx.strokeRect(heroRect.x, heroRect.y, heroRect.w, heroRect.h);
-  } else {
-    // Palm silhouettes framing the cover, drawn over the panels.
-    const palm = Math.min(w, h) * 0.2;
-    ctx.globalAlpha = 0.88;
-    drawPalm(ctx, w * 0.015, h * 1.0, palm * 1.1, 0.22, '#0a0214');
-    drawPalm(ctx, w * 0.985, h * 1.0, palm, -0.24, '#0a0214');
+  const zoom = Math.min(4, Math.max(1, crop.zoom || 1));
+  const base = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+  const scale = base * zoom;
+  const dw = image.naturalWidth * scale;
+  const dh = image.naturalHeight * scale;
+  const maxPanX = Math.max(0, (dw - w) / 2);
+  const maxPanY = Math.max(0, (dh - h) / 2);
+  const panX = Math.min(maxPanX, Math.max(-maxPanX, crop.panX || 0));
+  const panY = Math.min(maxPanY, Math.max(-maxPanY, crop.panY || 0));
+  if (grade.filter) ctx.filter = grade.filter;
+  ctx.drawImage(image, x + (w - dw) / 2 + panX, y + (h - dh) / 2 + panY, dw, dh);
+  ctx.filter = 'none';
+  if (grade.tint) {
+    const tint = ctx.createLinearGradient(x, y, x + w, y + h);
+    tint.addColorStop(0, grade.tint[0]);
+    tint.addColorStop(1, grade.tint[1]);
+    ctx.globalCompositeOperation = grade.tintMode;
+    ctx.globalAlpha = grade.tintAlpha;
+    ctx.fillStyle = tint;
+    ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
+  return { panX, panY };
+}
+
+// A white poster frame around a panel, drawn after the grade so it
+// stays white even under a gradient-map grade.
+export function drawPanelFrame(ctx, panelRect) {
+  const lw = Math.max(3, Math.round(Math.min(panelRect.w, panelRect.h) * 0.012));
+  ctx.save();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = lw;
+  ctx.strokeRect(
+    panelRect.x + lw / 2, panelRect.y + lw / 2,
+    panelRect.w - lw, panelRect.h - lw,
+  );
+  ctx.strokeStyle = 'rgba(10, 4, 20, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelRect.x + lw, panelRect.y + lw, panelRect.w - 2 * lw, panelRect.h - 2 * lw);
+  ctx.restore();
+}
+
+// The mosaic centre tile's accent frame: a double border in the grade's
+// hot pink and gold.
+export function drawAccentFrame(ctx, panelRect) {
+  ctx.save();
+  ctx.strokeStyle = '#ff2e88';
+  ctx.lineWidth = Math.max(4, Math.round(panelRect.w * 0.02));
+  ctx.strokeRect(panelRect.x + 6, panelRect.y + 6, panelRect.w - 12, panelRect.h - 12);
+  ctx.strokeStyle = '#ffd76a';
+  ctx.lineWidth = Math.max(2, Math.round(panelRect.w * 0.008));
+  ctx.strokeRect(panelRect.x + 16, panelRect.y + 16, panelRect.w - 32, panelRect.h - 32);
+  ctx.restore();
+}
+
+// Halftone title: the text is drawn solid on an offscreen canvas, then
+// re-drawn as a grid of dots whose size follows the glyph's coverage.
+// Big dots carry the letterforms; the gaps keep the photo visible.
+// x is the centre of the title, or its left edge when align is 'left'.
+export function renderHalftoneTitle(ctx, text, x, cy, maxWidth, fontPx, color, align) {
+  const pad = Math.ceil(fontPx * 0.3);
+  const off = document.createElement('canvas');
+  off.width = Math.max(2, Math.ceil(maxWidth) + pad * 2);
+  off.height = Math.ceil(fontPx * 1.5) + pad * 2;
+  const octx = off.getContext('2d');
+  octx.font = fontPx + 'px "Bebas Neue", "Arial Narrow", sans-serif';
+  octx.textAlign = align === 'left' ? 'left' : 'center';
+  octx.textBaseline = 'middle';
+  octx.fillStyle = '#ffffff';
+  octx.fillText(text, align === 'left' ? pad : off.width / 2, off.height / 2);
+  const data = octx.getImageData(0, 0, off.width, off.height).data;
+  const step = Math.max(5, Math.round(fontPx / 13));
+  const ox = align === 'left' ? x : x - off.width / 2;
+  const oy = cy - off.height / 2;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 4, 20, 0.45)';
+  for (let gy = step / 2; gy < off.height; gy += step) {
+    for (let gx = step / 2; gx < off.width; gx += step) {
+      const a = data[(Math.floor(gy) * off.width + Math.floor(gx)) * 4 + 3];
+      if (a < 24) continue;
+      const r = (step / 2) * Math.sqrt(a / 255);
+      ctx.beginPath();
+      ctx.arc(ox + gx + 2, oy + gy + 3, Math.max(0.6, r), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = color;
+  for (let gy = step / 2; gy < off.height; gy += step) {
+    for (let gx = step / 2; gx < off.width; gx += step) {
+      const a = data[(Math.floor(gy) * off.width + Math.floor(gx)) * 4 + 3];
+      if (a < 24) continue;
+      const r = (step / 2) * Math.sqrt(a / 255);
+      ctx.beginPath();
+      ctx.arc(ox + gx, oy + gy, Math.max(0.6, r), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// Pick a title size that fits maxWidth, then draw it in the given style.
+// x is the centre of the title, or its left edge when align is 'left'.
+export function drawTitleText(ctx, text, x, cy, maxWidth, fontPx, style, align) {
+  ctx.save();
+  ctx.textAlign = align === 'left' ? 'left' : 'center';
+  ctx.textBaseline = 'middle';
+  let px = fontPx;
+  ctx.font = px + 'px "Bebas Neue", "Arial Narrow", sans-serif';
+  while (px > 24 && ctx.measureText(text).width > maxWidth) {
+    px = Math.floor(px * 0.94);
+    ctx.font = px + 'px "Bebas Neue", "Arial Narrow", sans-serif';
+  }
+  if (style === 'halftone') {
+    renderHalftoneTitle(ctx, text, x, cy, maxWidth, px, '#ffffff', align);
+    ctx.restore();
+    return px;
+  }
+  if (style === 'shadow') {
+    ctx.fillStyle = 'rgba(10, 4, 20, 0.65)';
+    ctx.fillText(text, x + px * 0.05, cy + px * 0.07);
+  }
+  if (style === 'outline') {
+    ctx.lineWidth = Math.max(2, px * 0.09);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, cy);
+    ctx.fillStyle = '#1a0b2e';
+    ctx.fillText(text, x, cy);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, x, cy);
+  }
+  ctx.restore();
+  return px;
+}
+
+// The title band: a dark strip with a hot gradient top edge, the title
+// on the left and the subtitle on the right.
+export function drawTitleBand(ctx, band, state) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(13, 5, 24, 0.92)';
+  ctx.fillRect(band.x, band.y, band.w, band.h);
+  const edge = ctx.createLinearGradient(band.x, 0, band.x + band.w, 0);
+  edge.addColorStop(0, '#ff2e88');
+  edge.addColorStop(0.5, '#ff7a3c');
+  edge.addColorStop(1, '#ffd76a');
+  ctx.fillStyle = edge;
+  ctx.fillRect(band.x, band.y, band.w, Math.max(3, band.h * 0.05));
+  const titlePx = Math.min(band.w * 0.2, band.h * 0.58);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const title = (state.title || 'VICE CITY').toUpperCase();
+  drawTitleText(ctx, title, band.x + band.w * 0.02, band.y + band.h * 0.52, band.w * 0.55, titlePx, state.captionStyle, 'left');
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  try { ctx.letterSpacing = Math.max(1, band.h * 0.03) + 'px'; } catch (e) { /* older canvas */ }
+  ctx.font = Math.max(10, band.h * 0.2) + 'px "Bebas Neue", "Arial Narrow", sans-serif';
+  ctx.fillStyle = '#ffd76a';
+  ctx.fillText((state.subtitle || '').toUpperCase(), band.x + band.w * 0.98, band.y + band.h * 0.55);
+  try { ctx.letterSpacing = '0px'; } catch (e) { /* older canvas */ }
+  ctx.restore();
+}
+
+// The caption over the cover (top, centre or bottom): title plus a
+// letter-spaced subtitle beneath it, with a soft dark scrim so the
+// lettering reads on any photo.
+export function drawCaption(ctx, state, W, H) {
+  const pos = state.titlePosition;
+  const { panels, band } = layoutPanels(state.layout, W, H);
+  void panels;
+  if (pos === 'band') {
+    const rect = band || { x: 0, y: Math.round(H * 0.84), w: W, h: Math.round(H * 0.16) };
+    drawTitleBand(ctx, rect, state);
+    return;
+  }
+  const cy = pos === 'top' ? H * 0.13 : pos === 'center' ? H * 0.5 : H * 0.87;
+  const title = (state.title || 'VICE CITY').toUpperCase();
+  const subtitle = (state.subtitle || '').toUpperCase();
+  ctx.save();
+  const scrim = ctx.createLinearGradient(0, cy - H * 0.12, 0, cy + H * 0.12);
+  scrim.addColorStop(0, 'rgba(10, 4, 20, 0)');
+  scrim.addColorStop(0.5, 'rgba(10, 4, 20, 0.5)');
+  scrim.addColorStop(1, 'rgba(10, 4, 20, 0)');
+  ctx.fillStyle = scrim;
+  ctx.fillRect(0, cy - H * 0.12, W, H * 0.24);
+  ctx.restore();
+  const titlePx = drawTitleText(ctx, title, W / 2, cy - H * 0.015, W * 0.92, W * 0.15, state.captionStyle);
+  if (subtitle) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    try { ctx.letterSpacing = Math.max(2, W * 0.006) + 'px'; } catch (e) { /* older canvas */ }
+    ctx.font = Math.max(12, titlePx * 0.24) + 'px "Bebas Neue", "Arial Narrow", sans-serif';
+    ctx.fillStyle = '#ffd76a';
+    ctx.fillText(subtitle, W / 2, cy + titlePx * 0.62);
+    ctx.restore();
+  }
+}
+
+// Key Art: the hero photo on the left, three stacked photos on the
+// right, and the title band underneath. A skyline strip and two palms
+// frame the band's top edge.
+export function drawKeyArtLayout(ctx, state, photos, W, H, panels, band, grade) {
+  for (const p of panels) {
+    if (p.kind !== 'photo') continue;
+    drawPanel(ctx, p, photos[p.slot], state.panels[p.slot], grade);
+  }
+  if (band) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(band.x, band.y, band.w, band.h);
+    ctx.clip();
+    drawSkyline(ctx, band.x, band.y + band.h * 0.45, band.w, band.h * 0.55, 77);
+    ctx.restore();
+  }
+}
+
+// Mosaic: photo tiles plus art tiles — sky, skyline and palms where no
+// photo sits, and a sun over the accent centre tile.
+export function drawMosaicLayout(ctx, state, photos, W, H, panels, grade) {
+  for (const p of panels) {
+    if (p.kind === 'photo') {
+      drawPanel(ctx, p, photos[p.slot], state.panels[p.slot], grade);
+      continue;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(p.x, p.y, p.w, p.h);
+    ctx.clip();
+    const tileSky = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+    tileSky.addColorStop(0, grade.sky[0]);
+    tileSky.addColorStop(0.55, grade.sky[1]);
+    tileSky.addColorStop(1, grade.sky[2]);
+    ctx.fillStyle = tileSky;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    drawSkyline(ctx, p.x, p.y + p.h * 0.62, p.w, p.h * 0.38, 41 + p.x);
+    if (p.role === 'accent') {
+      ctx.fillStyle = grade.sun;
+      ctx.beginPath();
+      ctx.arc(p.x + p.w / 2, p.y + p.h * 0.42, p.h * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      drawPalm(ctx, p.x + p.w * 0.16, p.y + p.h, p.h * 0.62, -0.12, '#12061f');
+      drawPalm(ctx, p.x + p.w * 0.86, p.y + p.h, p.h * 0.55, 0.12, '#12061f');
+    } else {
+      drawPalm(ctx, p.x + p.w * 0.12, p.y + p.h, p.h * 0.6, -0.1, '#12061f');
+    }
+    ctx.restore();
+  }
+}
+
+// Every layout except Key Art and Mosaic: just its photo panels.
+export function drawStandardCover(ctx, state, photos, W, H, panels, grade) {
+  for (const p of panels) {
+    if (p.kind !== 'photo') continue;
+    drawPanel(ctx, p, photos[p.slot], state.panels[p.slot], grade);
+  }
+}
+
+// The whole cover, in order: sky, panels, gradient-map grade, palms
+// and frames, caption, vignette. Returns the finished canvas.
+export function paintCoverBase(state, photos, W, H) {
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const grade = gradeById(state.grade);
+  const { panels, band } = layoutPanels(state.layout, W, H);
+
+  drawSky(ctx, W, H, grade);
+  if (state.layout === 'key-art') {
+    drawKeyArtLayout(ctx, state, photos, W, H, panels, band, grade);
+  } else if (state.layout === 'mosaic') {
+    drawMosaicLayout(ctx, state, photos, W, H, panels, grade);
+  } else {
+    drawStandardCover(ctx, state, photos, W, H, panels, grade);
   }
 
-  drawCaption(ctx, state, grade, w, h, heroRect);
+  if (grade.kind === 'gradient-map') {
+    applyGradientMapGrade(ctx, W, H, grade.stops);
+  }
 
-  // Vignette + outer frame.
-  const vig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.max(w, h) * 0.75);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.28)');
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.006);
-  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
-  return heroRect;
-}
+  for (const p of panels) {
+    if (p.kind === 'photo') drawPanelFrame(ctx, p);
+    if (p.kind === 'art' && p.role === 'accent') drawAccentFrame(ctx, p);
+  }
 
-/**
- * Key Art layout: one dominant hero panel, three stacked scenes beside it,
- * and the halftone title in a band across the bottom — the poster's key art.
- */
-export function drawKeyArtLayout(canvas, state) {
-  return paintCoverBase(canvas, state, 'keyart');
-}
+  // Foreground palms frame the bottom corners of the cover.
+  const palmH = H * 0.3;
+  drawPalm(ctx, W * 0.015, H * 1.0, palmH, -0.14, '#0d0518');
+  drawPalm(ctx, W * 0.985, H * 1.0, palmH * 0.86, 0.14, '#0d0518');
 
-/** Mosaic layout: nine tiles in a 3x3 grid, centre tile framed in the grade accent. */
-export function drawMosaicLayout(canvas, state) {
-  return paintCoverBase(canvas, state, 'mosaic');
-}
+  drawCaption(ctx, state, W, H);
 
-/** Every other layout goes through the same pipeline with standard chrome. */
-export function drawStandardCover(canvas, state) {
-  return paintCoverBase(canvas, state, 'standard');
-}
+  const vignette = ctx.createRadialGradient(
+    W / 2, H / 2, Math.min(W, H) * 0.42,
+    W / 2, H / 2, Math.max(W, H) * 0.75,
+  );
+  vignette.addColorStop(0, 'rgba(10, 4, 20, 0)');
+  vignette.addColorStop(1, 'rgba(10, 4, 20, 0.42)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
 
-/** Renders the whole cover for `state` onto `canvas` at its own pixel size. */
-export function drawCover(canvas, state) {
-  if (state.layout === 'keyart') return drawKeyArtLayout(canvas, state);
-  if (state.layout === 'mosaic') return drawMosaicLayout(canvas, state);
-  return drawStandardCover(canvas, state);
-}
-
-/** Renders the cover at an arbitrary size and returns the fresh canvas. */
-export function renderCover(state, w, h) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  drawCover(canvas, state);
   return canvas;
 }

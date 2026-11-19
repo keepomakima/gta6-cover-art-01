@@ -3,114 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Heatwave Cover Studio — GTA 6-style cover art maker</title>
-<link rel="stylesheet" href="./style.css">
+<title>Heatwave Cover Studio — GTA 6 Cover Art Maker</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">HW</span><span class="brand-name">HEATWAVE COVER STUDIO</span><span class="brand-tag">GTA 6-style poster maker &middot; 100% offline</span></div>
-  <div class="top-actions">
-    <button id="exportAll" type="button" class="btn primary">Export all 3 sizes</button>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">HW</span>
+    <div>
+      <h1>Heatwave Cover Studio</h1>
+      <p>Turn any photo into GTA&nbsp;6-style cover art — offline, in your browser.</p>
+    </div>
   </div>
+  <div class="topbar-note">Offline · Photos stay on your machine · PNG export</div>
 </header>
-<main class="app">
-  <aside class="panel controls" aria-label="Cover controls">
-    <section>
-      <h2>1 &middot; Photos</h2>
-      <p class="hint">Drop photos anywhere, or pick files. Five Vice City scenes are loaded already — every panel shows a different one.</p>
-      <div class="row">
-        <label class="file-btn">Add photos<input id="photoInput" type="file" accept="image/*" multiple hidden></label>
-        <button id="sampleBtn" type="button" class="btn">Load samples</button>
-      </div>
-      <div id="photoStrip" class="photo-strip" aria-label="Photo library"></div>
+
+<main class="workspace">
+  <aside class="controls" aria-label="Cover controls">
+    <section class="control-group">
+      <h2>Layout</h2>
+      <div class="chips" id="layoutChips"></div>
     </section>
-    <section>
-      <h2>2 &middot; Layout</h2>
-      <div id="layoutRow" class="chip-row" role="group" aria-label="Layout"></div>
-      <p class="hint">Key Art is the hero poster; Mosaic is a 3&times;3 grid. Click a panel on the cover to select it, then drag to pan and scroll to zoom.</p>
-      <div id="panelList" class="panel-list"></div>
+
+    <section class="control-group">
+      <h2>Colour grade</h2>
+      <div class="chips" id="gradeChips"></div>
     </section>
-    <section>
-      <h2>3 &middot; Colour grade</h2>
-      <div id="gradeRow" class="chip-row" role="group" aria-label="Colour grade"></div>
-      <label class="slider-label">Grade strength <span id="gradeStrengthVal">75%</span>
-        <input id="gradeStrength" type="range" min="0" max="100" value="75">
-      </label>
-      <p class="hint">Heatwave and Ultraviolet are gradient-map grades: the whole cover's light is remapped through a sunset or neon gradient.</p>
+
+    <section class="control-group">
+      <h2>Caption style</h2>
+      <div class="chips" id="styleChips"></div>
     </section>
-    <section>
-      <h2>4 &middot; Caption</h2>
-      <label class="field">Title
-        <input id="titleInput" type="text" maxlength="24" value="VICE CITY">
-      </label>
-      <label class="field">Subtitle
-        <input id="subtitleInput" type="text" maxlength="48" value="NEON HEIST &middot; LEONIDA 2026">
-      </label>
-      <div class="row">
-        <label class="field">Title size <span id="titleSizeVal">100%</span>
-          <input id="titleSize" type="range" min="60" max="140" value="100">
-        </label>
-        <label class="field">Position
-          <select id="titlePos">
-            <option value="band" selected>Title band</option>
-            <option value="bottom">Bottom</option>
-            <option value="top">Top</option>
-            <option value="hero">Over hero panel</option>
-          </select>
-        </label>
-      </div>
-      <div class="row">
-        <label class="field">Outline
-          <select id="outlineColor">
-            <option value="#ff2e88" selected>Hot pink</option>
-            <option value="#00e5ff">Neon cyan</option>
-            <option value="#ffb300">Sunset gold</option>
-            <option value="#111111">Black</option>
-            <option value="#ffffff">White</option>
-          </select>
-        </label>
-        <label class="field">Style
-          <select id="titleStyle">
-            <option value="halftone" selected>Halftone</option>
-            <option value="outline">Outlined</option>
-            <option value="solid">Solid</option>
-            <option value="shadow">Drop shadow</option>
-          </select>
-        </label>
-      </div>
+
+    <section class="control-group">
+      <h2>Title position</h2>
+      <div class="chips" id="posChips"></div>
     </section>
-    <section>
-      <h2>5 &middot; Export PNG</h2>
-      <div class="row">
-        <label class="field">Post size
-          <select id="sizeSelect">
-            <option value="1080x1080">Square &middot; 1080 &times; 1080</option>
-            <option value="1080x1350">Portrait &middot; 1080 &times; 1350</option>
-            <option value="1920x1080" selected>Landscape &middot; 1920 &times; 1080</option>
-          </select>
-        </label>
-      </div>
-      <div class="export-row">
-        <button id="exportBtn" type="button" class="btn primary">Export PNG</button>
-        <button data-export="1080x1080" type="button" class="btn size-btn">1080&sup2;</button>
-        <button data-export="1080x1350" type="button" class="btn size-btn">1080&times;1350</button>
-        <button data-export="1920x1080" type="button" class="btn size-btn">1920&times;1080</button>
-      </div>
-      <p id="status" role="status" class="status">Ready — drag a photo onto the cover to start.</p>
+
+    <section class="control-group">
+      <h2>Post size</h2>
+      <div class="chips" id="sizeChips"></div>
+    </section>
+
+    <section class="control-group">
+      <h2>Caption</h2>
+      <label class="field-label" for="titleInput">Title</label>
+      <input id="titleInput" type="text" maxlength="24" value="VICE CITY" autocomplete="off">
+      <label class="field-label" for="subtitleInput">Subtitle</label>
+      <input id="subtitleInput" type="text" maxlength="48" value="NEON HEIST · LEONIDA 2026" autocomplete="off">
+    </section>
+
+    <section class="control-group">
+      <h2>Photos — one per panel</h2>
+      <p class="hint">Drag a photo on the preview to pan it, scroll to zoom, or drop your own photo onto the stage.</p>
+      <div id="photoRows"></div>
+    </section>
+
+    <section class="control-group export-group">
+      <h2>Export</h2>
+      <button id="exportBtn" type="button" class="primary-btn">Export PNG</button>
+      <button id="exportAllBtn" type="button" class="secondary-btn">Export all 3 sizes</button>
+      <p id="status" class="status" role="status">Loading sample photos…</p>
     </section>
   </aside>
-  <section class="stage" aria-label="Live preview">
-    <div class="stage-head">
-      <span id="stageLabel">Live preview &middot; Landscape 1920 &times; 1080</span>
-      <span id="stageMeta">Key Art &middot; Heatwave</span>
+
+  <section class="stage-area">
+    <div id="stageWrap" class="stage-wrap">
+      <canvas id="stage" aria-label="Live cover preview"></canvas>
     </div>
-    <div class="canvas-wrap">
-      <canvas id="cover" width="1920" height="1080" aria-label="Cover preview"></canvas>
-      <div id="dropHint" class="drop-hint">Drop photos here</div>
-    </div>
-    <p class="stage-foot">Tip: click a panel, drag to reposition the photo inside it, scroll to zoom. Every change redraws instantly.</p>
+    <p class="stage-hint">Drag a panel to pan · Scroll over a panel to zoom · Drop a photo to replace a panel</p>
   </section>
 </main>
-<script type="module" src="./src/main.js"></script>
+
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

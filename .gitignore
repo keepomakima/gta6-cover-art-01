@@ -1,3 +1,4 @@
-# Dossier build outputs (written by `node main.ts`, never committed).
 out/
 out2/
+*.log
+.DS_Store
