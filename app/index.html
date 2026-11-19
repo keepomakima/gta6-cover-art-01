@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vice Cover Studio — GTA 6-style cover art maker</title>
+<title>Heatwave Cover Studio — GTA 6-style cover art maker</title>
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">VC</span><span class="brand-name">VICE COVER STUDIO</span><span class="brand-tag">GTA 6-style poster maker &middot; 100% offline</span></div>
+  <div class="brand"><span class="brand-mark">HW</span><span class="brand-name">HEATWAVE COVER STUDIO</span><span class="brand-tag">GTA 6-style poster maker &middot; 100% offline</span></div>
   <div class="top-actions">
     <button id="exportAll" type="button" class="btn primary">Export all 3 sizes</button>
   </div>
@@ -17,7 +17,7 @@
   <aside class="panel controls" aria-label="Cover controls">
     <section>
       <h2>1 &middot; Photos</h2>
-      <p class="hint">Drop photos anywhere, or pick files. Two Vice City samples are loaded already.</p>
+      <p class="hint">Drop photos anywhere, or pick files. Five Vice City scenes are loaded already — every panel shows a different one.</p>
       <div class="row">
         <label class="file-btn">Add photos<input id="photoInput" type="file" accept="image/*" multiple hidden></label>
         <button id="sampleBtn" type="button" class="btn">Load samples</button>
@@ -27,15 +27,16 @@
     <section>
       <h2>2 &middot; Layout</h2>
       <div id="layoutRow" class="chip-row" role="group" aria-label="Layout"></div>
-      <p class="hint">Click a panel on the cover to select it, then drag to pan and scroll to zoom.</p>
+      <p class="hint">Key Art is the hero poster; Mosaic is a 3&times;3 grid. Click a panel on the cover to select it, then drag to pan and scroll to zoom.</p>
       <div id="panelList" class="panel-list"></div>
     </section>
     <section>
       <h2>3 &middot; Colour grade</h2>
       <div id="gradeRow" class="chip-row" role="group" aria-label="Colour grade"></div>
-      <label class="slider-label">Grade strength <span id="gradeStrengthVal">70%</span>
-        <input id="gradeStrength" type="range" min="0" max="100" value="70">
+      <label class="slider-label">Grade strength <span id="gradeStrengthVal">75%</span>
+        <input id="gradeStrength" type="range" min="0" max="100" value="75">
       </label>
+      <p class="hint">Heatwave and Ultraviolet are gradient-map grades: the whole cover's light is remapped through a sunset or neon gradient.</p>
     </section>
     <section>
       <h2>4 &middot; Caption</h2>
@@ -51,7 +52,8 @@
         </label>
         <label class="field">Position
           <select id="titlePos">
-            <option value="bottom" selected>Bottom</option>
+            <option value="band" selected>Title band</option>
+            <option value="bottom">Bottom</option>
             <option value="top">Top</option>
             <option value="hero">Over hero panel</option>
           </select>
@@ -69,7 +71,8 @@
         </label>
         <label class="field">Style
           <select id="titleStyle">
-            <option value="outline" selected>Outlined</option>
+            <option value="halftone" selected>Halftone</option>
+            <option value="outline">Outlined</option>
             <option value="solid">Solid</option>
             <option value="shadow">Drop shadow</option>
           </select>
@@ -82,8 +85,8 @@
         <label class="field">Post size
           <select id="sizeSelect">
             <option value="1080x1080">Square &middot; 1080 &times; 1080</option>
-            <option value="1080x1350" selected>Portrait &middot; 1080 &times; 1350</option>
-            <option value="1920x1080">Landscape &middot; 1920 &times; 1080</option>
+            <option value="1080x1350">Portrait &middot; 1080 &times; 1350</option>
+            <option value="1920x1080" selected>Landscape &middot; 1920 &times; 1080</option>
           </select>
         </label>
       </div>
@@ -98,11 +101,11 @@
   </aside>
   <section class="stage" aria-label="Live preview">
     <div class="stage-head">
-      <span id="stageLabel">Live preview &middot; Portrait 1080 &times; 1350</span>
-      <span id="stageMeta">Cover Grid &middot; Vice Sunset</span>
+      <span id="stageLabel">Live preview &middot; Landscape 1920 &times; 1080</span>
+      <span id="stageMeta">Key Art &middot; Heatwave</span>
     </div>
     <div class="canvas-wrap">
-      <canvas id="cover" width="1080" height="1350" aria-label="Cover preview"></canvas>
+      <canvas id="cover" width="1920" height="1080" aria-label="Cover preview"></canvas>
       <div id="dropHint" class="drop-hint">Drop photos here</div>
     </div>
     <p class="stage-foot">Tip: click a panel, drag to reposition the photo inside it, scroll to zoom. Every change redraws instantly.</p>

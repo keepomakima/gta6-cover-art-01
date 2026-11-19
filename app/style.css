@@ -14,10 +14,11 @@ body {
   color: #f5eefb;
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+:focus-visible { outline: 3px solid #ffb300; outline-offset: 2px; }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 12px 20px;
+  padding: 14px 20px;
   background: linear-gradient(90deg, #ff2e88, #ff7a18 55%, #ffb300);
   color: #fff;
 }
@@ -32,7 +33,7 @@ body {
 
 .app { display: flex; gap: 20px; padding: 18px 20px 28px; align-items: flex-start; }
 .panel.controls {
-  width: 348px; flex: none; background: rgba(255,255,255,.06);
+  width: 360px; flex: none; background: rgba(255,255,255,.06);
   border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 16px;
   display: flex; flex-direction: column; gap: 18px;
   max-height: calc(100vh - 96px); overflow-y: auto;
@@ -40,7 +41,7 @@ body {
 .panel.controls section { display: flex; flex-direction: column; gap: 8px; }
 .panel.controls h2 {
   margin: 0; font-family: "Bebas Neue", sans-serif; font-size: 20px;
-  letter-spacing: 2px; color: #ffb300;
+  letter-spacing: 3px; color: #ffb300;
 }
 .hint { margin: 0; color: #c9b8d8; font-size: 12.5px; }
 .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
@@ -73,7 +74,7 @@ input[type=range] { width: 100%; accent-color: #ff2e88; }
   font: inherit; font-size: 12.5px; font-weight: 700; padding: 6px 10px; border-radius: 999px;
   border: 1px solid rgba(255,255,255,.3); background: transparent; color: #f5eefb; cursor: pointer;
 }
-.chip.active { background: #ff2e88; border-color: #ff2e88; color: #fff; }
+.chip.active { background: #ff2e88; border-color: #ff2e88; color: #fff; box-shadow: 0 0 0 2px rgba(255,179,0,.55); }
 .chip .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 
 .photo-strip { display: flex; gap: 8px; flex-wrap: wrap; }

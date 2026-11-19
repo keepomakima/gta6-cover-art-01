@@ -1,7 +1,11 @@
-// Vice Cover Studio — a GTA 6-style multi-panel cover art maker for make.fun's
-// gta6-cover-art-01 bounty (Node 22, standard library only). The app is plain
-// static files under app/ (index.html + canvas modules + one OFL font + two
-// bundled sample photos) that run offline in a desktop browser. This program
+// Heatwave Cover Studio v2 — a GTA 6-style multi-panel cover art maker for
+// make.fun's gta6-cover-art-01 bounty (Node 22, standard library only). The
+// app is plain static files under app/ (index.html + canvas modules + one OFL
+// font + five bundled procedural sample scenes) that run offline in a desktop
+// browser: seven layouts including the new Key Art hero poster and the 3x3
+// Mosaic, eight colour grades including the Heatwave and Ultraviolet
+// gradient-map grades, a halftone caption style, per-panel crop and
+// positioning, and one-click PNG export in the three post sizes. This program
 // hands it in: it copies app/ and screenshots/ from beside this file to
 // /output (or MAKEFUN_OUTPUT_DIR outside the grader) and writes
 // /output/dossier.json with buildDossier from the vendored make.fun library,

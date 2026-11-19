@@ -1,7 +1,8 @@
-// Wires the editor: photo library, layout/grade/caption controls, per-panel crop
-// by dragging on the preview, and PNG export in the three post sizes. Exposes
-// window.__coverApp so a headless driver can exercise the real app end to end.
-import { SIZES, LAYOUTS, GRADES, defaultState, layoutPanels } from './state.js';
+// Wires the editor: five distinct sample photos, layout/grade/caption
+// controls, per-panel crop by dragging on the preview, and PNG export in the
+// three post sizes. Exposes window.__coverApp so a headless driver can
+// exercise the real app end to end.
+import { SIZES, LAYOUTS, GRADES, TITLE_STYLES, defaultState, layoutPanels } from './state.js';
 import { drawCover, renderCover } from './cover.js';
 
 const canvas = document.getElementById('cover');
@@ -41,16 +42,22 @@ async function addPhoto(img, name) {
   redraw();
 }
 
-async function loadSamples() {
-  const samples = [
-    ['./samples/boulevard.jpg', 'Boulevard'],
-    ['./samples/pier.jpg', 'Pier'],
-  ];
-  for (const [url, name] of samples) {
+/** The five bundled Vice City scenes, each a different procedural photo. */
+export const SAMPLE_PHOTOS = [
+  ['./samples/skyline-sunset.png', 'Skyline Sunset'],
+  ['./samples/beach-day.png', 'Beach Day'],
+  ['./samples/palm-boulevard.png', 'Palm Boulevard'],
+  ['./samples/neon-strip.png', 'Neon Strip'],
+  ['./samples/ocean-pier.png', 'Ocean Pier'],
+];
+
+/** Loads all five distinct sample photos, skipping any already loaded. */
+export async function loadDistinctSamplePhotos() {
+  for (const [url, name] of SAMPLE_PHOTOS) {
     if (state.photos.some((p) => p.name === name)) continue;
     try { addPhoto(await loadImage(url), name); } catch (e) { setStatus(`Sample ${name} failed to load.`); }
   }
-  setStatus('Sample photos loaded — pick a layout and export.');
+  setStatus('Five sample scenes loaded — every panel shows a different photo.');
 }
 
 function renderPhotoStrip() {
@@ -90,7 +97,7 @@ function renderChips() {
       state.layout = key;
       selectedPanel = 0;
       while (state.panels.length < layoutPanels(state, 100, 100).length) {
-        state.panels.push({ photo: state.panels.length % 2, zoom: 1.15, ox: 0, oy: 0 });
+        state.panels.push({ photo: state.panels.length % 5, zoom: 1.15, ox: 0, oy: 0 });
       }
       renderChips();
       renderPanelList();
@@ -120,7 +127,7 @@ function renderChips() {
 function renderPanelList() {
   const list = $('panelList');
   list.innerHTML = '';
-  const panels = layoutPanels(state, canvas.width || 1080, canvas.height || 1350);
+  const panels = layoutPanels(state, canvas.width || 1920, canvas.height || 1080);
   panels.forEach((panel, i) => {
     const row = document.createElement('div');
     row.className = 'panel-row' + (selectedPanel === i ? ' selected' : '');
@@ -226,7 +233,7 @@ $('photoInput').addEventListener('change', async (e) => {
   }
   setStatus(`${state.photos.length} photos loaded.`);
 });
-$('sampleBtn').addEventListener('click', loadSamples);
+$('sampleBtn').addEventListener('click', loadDistinctSamplePhotos);
 for (const type of ['dragenter', 'dragover']) {
   document.body.addEventListener(type, (e) => { e.preventDefault(); document.body.classList.add('dragging'); });
 }
@@ -265,9 +272,9 @@ export async function exportPNG(sizeKey) {
   const url = out.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = url;
-  a.download = `vice-cover-${size.w}x${size.h}.png`;
+  a.download = `heatwave-cover-${size.w}x${size.h}.png`;
   a.click();
-  setStatus(`Exported vice-cover-${size.w}x${size.h}.png`);
+  setStatus(`Exported heatwave-cover-${size.w}x${size.h}.png`);
   return url;
 }
 
@@ -286,14 +293,15 @@ $('exportAll').addEventListener('click', async () => {
 // Deterministic test API for the headless driver (and for ?shot= scenes).
 window.__coverApp = {
   state,
-  get ready() { return fontsReady && state.photos.length >= 2; },
+  get ready() { return fontsReady && state.photos.length >= 5; },
   async loadSample(i) {
-    const urls = ['./samples/boulevard.jpg', './samples/pier.jpg'];
-    const names = ['Boulevard', 'Pier'];
-    if (state.photos.some((p) => p.name === names[i])) return state.photos.length;
-    addPhoto(await loadImage(urls[i]), names[i]);
+    const [url, name] = SAMPLE_PHOTOS[i];
+    if (state.photos.some((p) => p.name === name)) return state.photos.length;
+    addPhoto(await loadImage(url), name);
     return state.photos.length;
   },
+  /** Photo index of every visible panel in the current layout, in order. */
+  panelPhotos() { return layoutPanels(state, 1, 1).map((p) => p.photo); },
   setCaption(title, subtitle) {
     if (title != null) { state.title = title; $('titleInput').value = title; }
     if (subtitle != null) { state.subtitle = subtitle; $('subtitleInput').value = subtitle; }
@@ -302,6 +310,10 @@ window.__coverApp = {
   setLayout(name) { if (LAYOUTS[name]) { state.layout = name; renderChips(); renderPanelList(); redraw(); } },
   setGrade(name) { if (GRADES[name]) { state.grade = name; renderChips(); redraw(); } },
   setSize(key) { if (SIZES[key]) { state.size = key; $('sizeSelect').value = key; redraw(); } },
+  setTitleStyle(name) {
+    if (TITLE_STYLES.includes(name)) { state.titleStyle = name; $('titleStyle').value = name; redraw(); }
+  },
+  setTitlePos(name) { state.titlePos = name; $('titlePos').value = name; redraw(); },
   setPanel(i, photo, zoom, ox, oy) {
     const cur = state.panels[i] || { photo: 0, zoom: 1.1, ox: 0, oy: 0 };
     state.panels[i] = {
@@ -320,14 +332,17 @@ window.__coverApp = {
 };
 
 // Fixed scenes for screenshots: ?shot=cover|editor&layout=..&grade=..&size=..
+// &title=..&subtitle=..&style=..&pos=..
 async function runShot() {
   const q = new URLSearchParams(location.search);
   const shot = q.get('shot');
   if (!shot) return;
-  await loadSamples();
+  await loadDistinctSamplePhotos();
   if (q.get('layout')) window.__coverApp.setLayout(q.get('layout'));
   if (q.get('grade')) window.__coverApp.setGrade(q.get('grade'));
   if (q.get('title')) window.__coverApp.setCaption(q.get('title'), q.get('subtitle') ?? state.subtitle);
+  if (q.get('style')) window.__coverApp.setTitleStyle(q.get('style'));
+  if (q.get('pos')) window.__coverApp.setTitlePos(q.get('pos'));
   if (q.get('size')) window.__coverApp.setSize(q.get('size'));
   document.body.classList.add(`shot-${shot}`);
   if (shot === 'cover') {
@@ -345,4 +360,4 @@ renderChips();
 renderPanelList();
 redraw();
 document.fonts.load('400 100px "Bebas Neue"').then(() => { fontsReady = true; redraw(); }).catch(() => { fontsReady = true; });
-loadSamples().then(() => runShot());
+loadDistinctSamplePhotos().then(() => runShot());
