@@ -1,232 +1,196 @@
-// Heatwave Cover Studio — state, layouts, grades, caption styles, post sizes.
-// Every value here is the single source of truth for the editor and the
-// canvas renderer: the UI builds its chips from these tables, and cover.js
-// reads them when it paints a cover.
+// app/src/state.js — Key Art Studio: the data behind the cover maker.
+// Layouts, gradient-map grades, title styles, role tags and the default
+// state. No DOM here: cover.js renders from this, main.js wires the UI.
 
-export const LAYOUTS = [
-  { id: 'cover-grid', name: 'Cover Grid', blurb: 'Three up top, two below' },
-  { id: 'five-panel', name: 'Five Panel', blurb: 'Five tall strips' },
-  { id: 'triptych', name: 'Triptych', blurb: 'Wide hero, two wings' },
-  { id: 'single-hero', name: 'Single Hero', blurb: 'One photo, full bleed' },
-  { id: 'split-diptych', name: 'Split Diptych', blurb: 'Two halves' },
-  { id: 'key-art', name: 'Key Art', blurb: 'Hero left, stack right' },
-  { id: 'mosaic', name: 'Mosaic', blurb: 'Nine tiles, one accent' },
-];
-
-export const GRADES = [
-  {
-    id: 'vice-sunset', name: 'Vice Sunset', kind: 'overlay',
-    filter: 'saturate(1.3) contrast(1.06) brightness(1.02)',
-    sky: ['#2a0e4d', '#c22a72', '#ff7a3c'],
-    sun: '#ffd76a', tint: ['#ff7a3c', '#ff2e88'], tintAlpha: 0.16, tintMode: 'soft-light',
-  },
-  {
-    id: 'neon-night', name: 'Neon Night', kind: 'overlay',
-    filter: 'saturate(1.35) contrast(1.14) brightness(0.94)',
-    sky: ['#070b2a', '#1c2a6b', '#7b2ff7'],
-    sun: '#19c3e6', tint: ['#19c3e6', '#7b2ff7'], tintAlpha: 0.18, tintMode: 'soft-light',
-  },
-  {
-    id: 'palm-dusk', name: 'Palm Dusk', kind: 'overlay',
-    filter: 'saturate(1.22) contrast(1.05) brightness(0.98)',
-    sky: ['#1d0b33', '#7a2a8c', '#e85d75'],
-    sun: '#ff9d5c', tint: ['#e85d75', '#7a2a8c'], tintAlpha: 0.15, tintMode: 'soft-light',
-  },
-  {
-    id: 'golden-hour', name: 'Golden Hour', kind: 'overlay',
-    filter: 'saturate(1.32) contrast(1.04) brightness(1.06)',
-    sky: ['#3d1a05', '#c96a1e', '#ffcf5c'],
-    sun: '#fff3b0', tint: ['#ffcf5c', '#ff7a3c'], tintAlpha: 0.15, tintMode: 'soft-light',
-  },
-  {
-    id: 'monochrome-noir', name: 'Monochrome Noir', kind: 'overlay',
-    filter: 'grayscale(1) contrast(1.28) brightness(1.02)',
-    sky: ['#0a0a12', '#2a2a38', '#6a6a7a'],
-    sun: '#f2f2f2', tint: ['#ffffff', '#8a8a9a'], tintAlpha: 0.08, tintMode: 'overlay',
-  },
-  {
-    id: 'miami-pop', name: 'Miami Pop', kind: 'overlay',
-    filter: 'saturate(1.7) contrast(1.1) brightness(1.03)',
-    sky: ['#12082e', '#ff2e88', '#19e6d6'],
-    sun: '#ffe95e', tint: ['#ff2e88', '#19e6d6'], tintAlpha: 0.14, tintMode: 'soft-light',
-  },
-  {
-    id: 'heatwave', name: 'Heatwave', kind: 'gradient-map',
-    filter: '',
-    sky: ['#2b0a4a', '#ff2e88', '#ff7a3c'],
-    sun: '#ffe95e', tint: null, tintAlpha: 0, tintMode: 'soft-light',
-    stops: [[0, '#23083f'], [0.32, '#8c1e7d'], [0.55, '#ff2e88'], [0.78, '#ff7a3c'], [1, '#ffe95e']],
-  },
-  {
-    id: 'ultraviolet', name: 'Ultraviolet', kind: 'gradient-map',
-    filter: '',
-    sky: ['#0d1033', '#4a1d8f', '#19c3e6'],
-    sun: '#f4feff', tint: null, tintAlpha: 0, tintMode: 'soft-light',
-    stops: [[0, '#0d1033'], [0.38, '#5b21b6'], [0.68, '#19c3e6'], [1, '#f4feff']],
-  },
-];
-
-export const CAPTION_STYLES = [
-  { id: 'outline', name: 'Outline' },
-  { id: 'solid', name: 'Solid' },
-  { id: 'shadow', name: 'Shadow' },
-  { id: 'halftone', name: 'Halftone' },
-];
-
-export const TITLE_POSITIONS = [
-  { id: 'top', name: 'Top' },
-  { id: 'center', name: 'Center' },
-  { id: 'bottom', name: 'Bottom' },
-  { id: 'band', name: 'Title Band' },
-];
-
-export const POST_SIZES = [
-  { id: 'square', label: '1080 × 1080', width: 1080, height: 1080 },
-  { id: 'portrait', label: '1080 × 1350', width: 1080, height: 1350 },
-  { id: 'wide', label: '1920 × 1080', width: 1920, height: 1080 },
-];
-
+// The five sample scenes, rendered procedurally in-session (tools/make-samples.mjs).
 export const SAMPLE_SCENES = [
-  { file: 'skyline-sunset.png', label: 'Skyline Sunset' },
-  { file: 'beach-day.png', label: 'Beach Day' },
-  { file: 'palm-boulevard.png', label: 'Palm Boulevard' },
-  { file: 'neon-strip.png', label: 'Neon Strip' },
-  { file: 'ocean-pier.png', label: 'Ocean Pier' },
+  { id: 'skyline-sunset', label: 'Skyline Sunset', src: 'samples/skyline-sunset.png' },
+  { id: 'beach-day', label: 'Beach Day', src: 'samples/beach-day.png' },
+  { id: 'neon-strip', label: 'Neon Strip', src: 'samples/neon-strip.png' },
+  { id: 'ocean-pier', label: 'Ocean Pier', src: 'samples/ocean-pier.png' },
+  { id: 'palm-boulevard', label: 'Palm Boulevard', src: 'samples/palm-boulevard.png' },
+];
+
+// Export sizes: the three common post sizes, plus export-all.
+export const EXPORT_SIZES = [
+  { id: 'square', label: '1080 × 1080', w: 1080, h: 1080 },
+  { id: 'portrait', label: '1080 × 1350', w: 1080, h: 1350 },
+  { id: 'wide', label: '1920 × 1080', w: 1920, h: 1080 },
+];
+
+// A panel is { x, y, w, h } in fractions of the cover, plus an optional
+// `skew` (the top edge's horizontal shift, in fractions of cover height)
+// for the Slanted layout's diagonal panels.
+export const LAYOUTS = [
+  {
+    id: 'keyart', name: 'Key Art', blurb: 'Hero skyline + 3 panels',
+    panels: () => ([
+      { x: 0, y: 0, w: 1, h: 0.60 },
+      { x: 0, y: 0.60, w: 1 / 3, h: 0.40 },
+      { x: 1 / 3, y: 0.60, w: 1 / 3, h: 0.40 },
+      { x: 2 / 3, y: 0.60, w: 1 / 3, h: 0.40 },
+    ]),
+    title: { fx: 0.045, fy: 0.40, fw: 0.91, align: 'left' },
+    seal: { fx: 0.885, fy: 0.475 }, callouts: 'hero-top', frame: true,
+  },
+  {
+    id: 'mosaic', name: 'Mosaic', blurb: '9-panel poster grid',
+    panels: () => {
+      const out = [];
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+        out.push({ x: c / 3, y: r / 3, w: 1 / 3, h: 1 / 3 });
+      }
+      return out;
+    },
+    title: { fx: 0.05, fy: 0.70, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.10 }, callouts: 'hero-top', frame: false,
+  },
+  {
+    id: 'covergrid', name: 'Cover Grid', blurb: 'Hero + 4 panels',
+    panels: () => ([
+      { x: 0, y: 0, w: 0.64, h: 0.58 },
+      { x: 0.64, y: 0, w: 0.36, h: 0.58 },
+      { x: 0, y: 0.58, w: 1 / 3, h: 0.42 },
+      { x: 1 / 3, y: 0.58, w: 1 / 3, h: 0.42 },
+      { x: 2 / 3, y: 0.58, w: 1 / 3, h: 0.42 },
+    ]),
+    title: { fx: 0.045, fy: 0.38, fw: 0.58, align: 'left' },
+    seal: { fx: 0.885, fy: 0.10 }, callouts: 'hero-top', frame: true,
+  },
+  {
+    id: 'fivepanel', name: 'Five Panel', blurb: 'Hero + 4 below',
+    panels: () => ([
+      { x: 0, y: 0, w: 1, h: 0.46 },
+      { x: 0, y: 0.46, w: 0.25, h: 0.54 },
+      { x: 0.25, y: 0.46, w: 0.25, h: 0.54 },
+      { x: 0.50, y: 0.46, w: 0.25, h: 0.54 },
+      { x: 0.75, y: 0.46, w: 0.25, h: 0.54 },
+    ]),
+    title: { fx: 0.05, fy: 0.28, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.10 }, callouts: 'hero-top', frame: false,
+  },
+  {
+    id: 'triptych', name: 'Triptych', blurb: 'Three tall panels',
+    panels: () => ([
+      { x: 0, y: 0, w: 1 / 3, h: 1 },
+      { x: 1 / 3, y: 0, w: 1 / 3, h: 1 },
+      { x: 2 / 3, y: 0, w: 1 / 3, h: 1 },
+    ]),
+    title: { fx: 0.05, fy: 0.70, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.08 }, callouts: 'hero-top', frame: false,
+  },
+  {
+    id: 'single', name: 'Single Hero', blurb: 'One full-bleed photo',
+    panels: () => ([{ x: 0, y: 0, w: 1, h: 1 }]),
+    title: { fx: 0.05, fy: 0.68, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.09 }, callouts: 'hero-top', frame: true,
+  },
+  {
+    id: 'split', name: 'Split Diptych', blurb: 'Two halves',
+    panels: () => ([
+      { x: 0, y: 0, w: 0.5, h: 1 },
+      { x: 0.5, y: 0, w: 0.5, h: 1 },
+    ]),
+    title: { fx: 0.05, fy: 0.70, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.08 }, callouts: 'hero-top', frame: false,
+  },
+  {
+    id: 'slanted', name: 'Slanted', blurb: 'Diagonal poster panels',
+    panels: () => ([
+      { x: -0.02, y: 0, w: 0.38, h: 1, skew: 0.10 },
+      { x: 0.33, y: 0, w: 0.38, h: 1, skew: 0.10 },
+      { x: 0.68, y: 0, w: 0.38, h: 1, skew: 0.10 },
+    ]),
+    title: { fx: 0.05, fy: 0.70, fw: 0.90, align: 'center' },
+    seal: { fx: 0.885, fy: 0.08 }, callouts: 'hero-top', frame: false,
+  },
+];
+
+export function layoutById(id) {
+  return LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
+}
+
+// Gradient-map grades: luminance 0..1 maps through these colour stops.
+// Heatwave is the default: it unifies any photo into one sunset palette.
+export const GRADES = [
+  { id: 'heatwave', name: 'Heatwave', swatch: ['#14082b', '#c43d6e', '#ffe9a8'],
+    stops: [[0, '#14082b'], [0.25, '#5b1a5e'], [0.5, '#c43d6e'], [0.75, '#ff7a3d'], [1, '#ffe9a8']] },
+  { id: 'ultraviolet', name: 'Ultraviolet', swatch: ['#0a0618', '#7b2fbe', '#fdf0ff'],
+    stops: [[0, '#0a0618'], [0.3, '#2d1b69'], [0.55, '#7b2fbe'], [0.8, '#e14eca'], [1, '#fdf0ff']] },
+  { id: 'golden-hour', name: 'Golden Hour', swatch: ['#1d1206', '#b26a1b', '#fff3c4'],
+    stops: [[0, '#1d1206'], [0.3, '#5c2e0e'], [0.55, '#b26a1b'], [0.8, '#f2a93b'], [1, '#fff3c4']] },
+  { id: 'neon-night', name: 'Neon Night', swatch: ['#0b0618', '#c2187a', '#e8fbff'],
+    stops: [[0, '#0b0618'], [0.3, '#3b0f54'], [0.55, '#c2187a'], [0.8, '#22d3ee'], [1, '#f0feff']] },
+  { id: 'vice-sunset', name: 'Vice Sunset', swatch: ['#160b2e', '#d94f70', '#fff1c9'],
+    stops: [[0, '#160b2e'], [0.3, '#6d1e5e'], [0.55, '#d94f70'], [0.8, '#ff9e57'], [1, '#fff1c9']] },
+  { id: 'palm-dusk', name: 'Palm Dusk', swatch: ['#0e1a12', '#4d8a5f', '#fff6d8'],
+    stops: [[0, '#0e1a12'], [0.3, '#1e4d3a'], [0.55, '#4d8a5f'], [0.8, '#d8c26a'], [1, '#fff6d8']] },
+  { id: 'noir', name: 'Monochrome Noir', swatch: ['#000000', '#8a8a8a', '#ffffff'],
+    stops: [[0, '#000000'], [0.35, '#2a2a2a'], [0.65, '#8a8a8a'], [1, '#ffffff']] },
+  { id: 'miami-pop', name: 'Miami Pop', swatch: ['#12041f', '#ff2e88', '#ffffff'],
+    stops: [[0, '#12041f'], [0.3, '#6a1fb0'], [0.55, '#ff2e88'], [0.8, '#ffb35c'], [1, '#ffffff']] },
 ];
 
 export function gradeById(id) {
-  return GRADES.find((g) => g.id === id) || GRADES[6];
+  return GRADES.find((g) => g.id === id) || GRADES[0];
 }
 
-export function sizeById(id) {
-  return POST_SIZES.find((s) => s.id === id) || POST_SIZES[2];
+// Title lettering styles: retro-chrome 3D, halftone dots, flat poster ink.
+export const TITLE_STYLES = [
+  { id: 'chrome', name: 'Retro Chrome' },
+  { id: 'halftone', name: 'Halftone' },
+  { id: 'flat', name: 'Flat Ink' },
+];
+
+// Invented cast for the role tags and billing block — no real GTA characters.
+export const DEFAULT_ROLES = [
+  { name: 'MARISOL VEGA', role: 'DRIVER' },
+  { name: 'DANTE RUIZ', role: 'LOOKOUT' },
+  { name: 'RICO SANTOS', role: 'FIXER' },
+];
+
+export const DEFAULT_CALLOUTS = [
+  { text: 'PALM BOULEVARD', ax: 0.10, ay: 0.10, side: -1 },
+  { text: 'NEON STRIP', ax: 0.90, ay: 0.10, side: 1 },
+];
+
+// One panel's photo + crop. zoom 1 = cover-fit; cx/cy = focal point (0..1).
+export function defaultCrop() {
+  return { zoom: 1, cx: 0.5, cy: 0.45 };
 }
 
+// The cover the app opens with: Key Art, Heatwave, four different photos.
 export function defaultState() {
   return {
-    layout: 'key-art',
+    layout: 'keyart',
     grade: 'heatwave',
-    captionStyle: 'halftone',
-    titlePosition: 'band',
     size: 'wide',
     title: 'VICE CITY',
-    subtitle: 'NEON HEIST · LEONIDA 2026',
-    panels: SAMPLE_SCENES.map((scene, i) => ({
-      sample: i,
-      upload: null,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      label: scene.label,
-    })),
+    subtitle: 'A LEONIDA STORY',
+    titleStyle: 'chrome',
+    titleScale: 1,
+    titleColor: '#ffffff',
+    showSeal: true,
+    showBilling: true,
+    showCallouts: true,
+    showRoles: true,
+    showFrame: true,
+    showGlow: true,
+    roles: DEFAULT_ROLES.map((r) => ({ ...r })),
+    callouts: DEFAULT_CALLOUTS.map((c) => ({ ...c })),
+    // 9 panels (Mosaic's count); layouts with fewer simply ignore the rest.
+    // The first four are four DIFFERENT sample scenes — no repeats on the
+    // default cover.
+    panels: [
+      { photo: 0, crop: defaultCrop() },
+      { photo: 1, crop: defaultCrop() },
+      { photo: 2, crop: defaultCrop() },
+      { photo: 3, crop: defaultCrop() },
+      { photo: 4, crop: defaultCrop() },
+      { photo: 0, crop: defaultCrop() },
+      { photo: 1, crop: defaultCrop() },
+      { photo: 2, crop: defaultCrop() },
+      { photo: 3, crop: defaultCrop() },
+    ],
   };
-}
-
-// Panel geometry for one layout at a cover of W by H pixels.
-// Returns { panels, band }: panels is an array of rects
-// { x, y, w, h, slot, kind, role }; band is the title-band rect or null.
-// kind 'photo' rects take panels[slot]; kind 'art' rects are drawn from
-// the sky, the skyline and the palms instead of a photo.
-export function layoutPanels(layoutId, W, H) {
-  const g = Math.max(4, Math.round(Math.min(W, H) * 0.016));
-  const rect = (x, y, w, h, slot, kind, role) => ({
-    x: Math.round(x), y: Math.round(y),
-    w: Math.round(w), h: Math.round(h),
-    slot, kind: kind || 'photo', role: role || '',
-  });
-
-  if (layoutId === 'cover-grid') {
-    const rowH = (H - g) / 2;
-    const colW = (W - 2 * g) / 3;
-    const bottomW = (W - g) / 2;
-    return {
-      panels: [
-        rect(0, 0, colW, rowH, 0, 'photo', 'top-left'),
-        rect(colW + g, 0, colW, rowH, 1, 'photo', 'top-middle'),
-        rect(2 * (colW + g), 0, colW, rowH, 2, 'photo', 'top-right'),
-        rect(0, rowH + g, bottomW, rowH, 3, 'photo', 'bottom-left'),
-        rect(bottomW + g, rowH + g, bottomW, rowH, 4, 'photo', 'bottom-right'),
-      ],
-      band: null,
-    };
-  }
-
-  if (layoutId === 'five-panel') {
-    const colW = (W - 4 * g) / 5;
-    return {
-      panels: [0, 1, 2, 3, 4].map((i) =>
-        rect(i * (colW + g), 0, colW, H, i, 'photo', 'strip-' + (i + 1))),
-      band: null,
-    };
-  }
-
-  if (layoutId === 'triptych') {
-    const sideW = (W - 2 * g) * 0.25;
-    const midW = (W - 2 * g) * 0.5;
-    return {
-      panels: [
-        rect(0, 0, sideW, H, 0, 'photo', 'wing-left'),
-        rect(sideW + g, 0, midW, H, 1, 'photo', 'hero'),
-        rect(sideW + g + midW + g, 0, sideW, H, 2, 'photo', 'wing-right'),
-      ],
-      band: null,
-    };
-  }
-
-  if (layoutId === 'single-hero') {
-    return { panels: [rect(0, 0, W, H, 0, 'photo', 'hero')], band: null };
-  }
-
-  if (layoutId === 'split-diptych') {
-    const halfW = (W - g) / 2;
-    return {
-      panels: [
-        rect(0, 0, halfW, H, 0, 'photo', 'left'),
-        rect(halfW + g, 0, halfW, H, 1, 'photo', 'right'),
-      ],
-      band: null,
-    };
-  }
-
-  if (layoutId === 'key-art') {
-    const bandH = Math.round(H * 0.15);
-    const bodyH = H - bandH - g;
-    const heroW = Math.round((W - g) * 0.6);
-    const rightX = heroW + g;
-    const rightW = W - rightX;
-    const stackH = (bodyH - 2 * g) / 3;
-    return {
-      panels: [
-        rect(0, 0, heroW, bodyH, 0, 'photo', 'hero'),
-        rect(rightX, 0, rightW, stackH, 1, 'photo', 'stack-top'),
-        rect(rightX, stackH + g, rightW, stackH, 2, 'photo', 'stack-middle'),
-        rect(rightX, 2 * (stackH + g), rightW, stackH, 3, 'photo', 'stack-bottom'),
-      ],
-      band: { x: 0, y: bodyH + g, w: W, h: bandH },
-    };
-  }
-
-  // Mosaic: a 3 by 3 grid. Five photo tiles (the corners plus the top
-  // middle) each take one sample scene exactly once; the two middle side
-  // tiles and the bottom middle tile are sky-and-palm art; the centre
-  // tile is the accent tile.
-  const cellW = (W - 2 * g) / 3;
-  const cellH = (H - 2 * g) / 3;
-  const cell = (col, row) => ({ x: col * (cellW + g), y: row * (cellH + g), w: cellW, h: cellH });
-  const photoCells = [[0, 0], [2, 0], [1, 0], [0, 2], [2, 2]];
-  const panels = photoCells.map(([col, row], i) => {
-    const c = cell(col, row);
-    return rect(c.x, c.y, c.w, c.h, i, 'photo', 'tile-' + col + '-' + row);
-  });
-  const artCells = [
-    { col: 0, row: 1, art: 'palms' },
-    { col: 2, row: 1, art: 'palms' },
-    { col: 1, row: 1, art: 'accent' },
-    { col: 1, row: 2, art: 'palms' },
-  ];
-  for (const a of artCells) {
-    const c = cell(a.col, a.row);
-    panels.push(rect(c.x, c.y, c.w, c.h, -1, 'art', a.art));
-  }
-  return { panels, band: null };
 }
